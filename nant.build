@@ -1,0 +1,29 @@
+<project name="Steamless" default="compile-solution">
+	<property name="build.configuration.debug" value="Debug" unless="${property::exists('build.configuration')}"/>  
+	<property name="build.configuration.release" value="Release" unless="${property::exists('build.configuration')}"/>  
+	<property name="build.verbosity" value="Normal" unless="${property::exists('build.verbosity')}"  />  
+	<property name="solution.name" value="${project::get-name()}" unless="${property::exists('solution.name')}"/>  
+	<property name="solution.extension" value="sln" unless="${property::exists('solution.extension')}"/>  
+	<property name="solution.dir" value="${project::get-base-directory()}"  unless="${property::exists('solution.dir')}"/>  
+	<property name="package.dir" value="${solution.dir}\_release"/>  
+	<property name="msbuild-VS2013" value="C:\Program Files (x86)\MSBuild\12.0\Bin\msbuild.exe" unless="${property::exists('msbuild-VS2013')}"/>  
+	<property name="msbuild-VS2015" value="C:\Program Files (x86)\MSBuild\14.0\Bin\msbuild.exe" unless="${property::exists('msbuild-VS2015')}"/> 
+	<property name="VS2017.type" value="Community"/>
+	<property name="msbuild-VS2017" value="C:\Program Files (x86)\Microsoft Visual Studio\2017\${VS2017.type}\MSBuild\15.0\Bin\msbuild.exe" unless="${property::exists('msbuild-VS2017')}"/> 
+	<property name="msbuild.args" value="/p:RunOctoPack=true;OctoPackPublishPackageToFileShare=${package.dir}" />
+
+	<target name="compile-solution">  
+		<exec program="${msbuild-VS2017}" verbose="true">
+			<arg line='"${solution.dir}\${solution.name}.${solution.extension}"' />
+			<arg value="/p:Configuration=${build.configuration.debug}"/>
+			<arg value="/target:Rebuild"/>
+			<arg value="${msbuild.args}" if="${property::exists('msbuild.args')}"/>
+		</exec>
+		<exec program="${msbuild-VS2017}" verbose="true">
+			<arg line='"${solution.dir}\${solution.name}.${solution.extension}"' />
+			<arg value="/p:Configuration=${build.configuration.release}"/>
+			<arg value="/target:Rebuild"/>
+			<arg value="${msbuild.args}" if="${property::exists('msbuild.args')}"/>
+		</exec>
+	</target>
+</project>  
