@@ -1,0 +1,149 @@
+<?xml version="1.0"?>
+<project name="visualstudio">
+
+	<!-- Init -->
+	<target name="vs.init">
+		<!-- Currently copied in as the latest versions of the SDKs' don't have env variables that point to them -->
+		<property name="vstudio.signtool" value="C:/Program Files (x86)/Windows Kits/8.1/bin/x64/signtool.exe"/>
+	</target>
+
+	<!-- Internal task to detect visual studio version -->
+	<target name="vs.detectStudio">
+		<!-- if performBuild depends on this, we'll autodetect the VS version required from the .sln file -->
+		<!-- I use the env variables to find vstudio. These are known not to be set for 'lite' versions -->
+		<!-- however the 'known' registry entries don't appear for me either, so cant rely on those --> 
+		<fail unless="${file::exists(vs.workspace)}" message="Could not start build, solution file ${vs.workspace} is not found!!!"/> 
+		<loadfile file="${vs.workspace}" property="solutionData"/> 
+		<property name="vs.version" value="unknown"/> 
+		
+		<!-- Visual Studio 2010 / 2017 etc -->
+		<if test="${string::contains(solutionData, 'Microsoft Visual Studio Solution File, Format Version 11.00') or string::contains(solutionData, 'Microsoft Visual Studio Solution File, Format Version 12.00')}">
+			<!-- Check project versions -->
+			<property name="projectfilename" value="${path::get-directory-name(vs.workspace)}\${vs.project}"/>
+			<if test="${file::exists(projectfilename + '.vcxproj')}">
+				<property name="projectfilename" value="${projectfilename}.vcxproj" />
+			</if>
+			<if test="${file::exists(projectfilename + '.csproj')}">
+				<property name="projectfilename" value="${projectfilename}.csproj" />
+			</if>
+			<if test="${string::contains(projectfilename, 'vcxproj') or string::contains(projectfilename, 'csproj')}">
+				<loadfile file="${projectfilename}" property="projectData"/>
+				<if test="${string::contains(projectData, 'ToolsVersion=&quot;15.0&quot;') or string::contains(projectData, 'ToolsVersion=&quot;14.0&quot;') }">
+					<property name="vs.version" value="2017"/>
+					<call target="vs.findStudio"/>
+				</if>
+			</if>
+
+			<if test="${not property::exists('vstudio.dir')}">
+				<property name="vs.version" value="2010"/>
+				<call target="vs.findStudio"/>
+			</if>
+			
+		</if>
+	
+		<!-- Visual Studio 2008 etc -->
+		<if test="${string::contains(solutionData, 'Microsoft Visual Studio Solution File, Format Version 10.00')}"> 
+			<property name="vs.version" value="2008"/>
+			<call target="vs.findStudio"/>
+		</if>
+		
+		<!-- Visual Studio 2005 -->
+		<if test="${string::contains(solutionData, 'Microsoft Visual Studio Solution File, Format Version 9.00')}"> 
+			<property name="vs.version" value="2005"/>
+			<call target="vs.findStudio"/>
+		</if>
+		
+		<!-- Visual Studio 2003 etc -->		
+		<if test="${string::contains(solutionData, 'Microsoft Visual Studio Solution File, Format Version 8.00')}"> 
+			<property name="vs.version" value="2003"/>
+			<call target="vs.findStudio"/>
+		</if>
+		
+		<!-- Did it work? -->
+		<fail if="${vs.version=='unknown'}" message="Unrecognized solution file in ${vs.workspace}"/> 
+		<property name="vsDevPath" 	value="${path::combine(vstudio.dir,'..\IDE\devenv.exe')}"/>
+		
+		<echo message="Solution file at ${vs.workspace} is for Visual Studio ${vs.version}"/> 
+		
+		<fail unless="${file::exists(vsDevPath)}" message="Could not start build, Visual Studio not found at ${vsDevPath}!!! "/>
+
+	</target>
+	
+	<!-- Version 'lookup'
+	 vs.version - 2015,2008,2017 etc..
+	 -->
+	<target name="vs.findStudio">
+		<choose>
+			<when test="${vs.version == '2003'}">
+				<property name="vstudio.dir" 	value="${environment::get-variable('VS71COMNTOOLS')}"/>
+			</when>
+			<when test="${vs.version == '2005'}">
+				<property name="vstudio.dir" 	value="${environment::get-variable('VS80COMNTOOLS')}"/>
+			</when>
+			<when test="${vs.version == '2008'}">
+				<property name="vstudio.dir" value="${environment::get-variable('VS90COMNTOOLS')}"/>
+			</when>
+			<when test="${vs.version == '2010'}">
+				<property name="vstudio.dir" value="${environment::get-variable('VS100COMNTOOLS')}"/>
+			</when>
+			<when test="${vs.version == '2017'}">
+				<!-- use vshwere tool -->
+				<property name="vsinfo.tmp" value="${project::get-base-directory()}/vsinfo.tmp"/>
+				<exec program="${commontools.nantscripts.folder}/tools/vswhere.exe" output="${vsinfo.tmp}">
+					<arg line="-version [15.0,16.0] -nologo -property installationPath"/>
+				</exec>
+				
+				<!-- Load in properties from vswhere -->
+				<loadfile file="${vsinfo.tmp}" property="vsinfo"/>
+				
+				<!-- Find install folder 'installationPath: '-->
+				<loadfile file="${vsinfo.tmp}" property="vstmpdir"/>
+				<property name="vstudio.dir" value="${string::trim(vstmpdir)}\common7\tools\"/>
+			</when>
+		</choose>
+	</target>
+
+	<!-- Does the actual build 
+	  Required Parameters:
+	  vs.workspace
+	  vs.target
+	  vs.project (Optional)
+	  vs.version (Optional Override to use a specific version of VisualStudio)
+	  -->
+	<target name="run-vs-build" description="compiles and builds a visual studio project" depends="vs.init">
+		<!-- Find Version of Vstudio required -->
+		<property name="vstudio.dir" value=""/>
+		<if test="${property::exists('vs.version')}">
+			<call target="vs.findStudio"/>
+		</if>
+
+		<if test="${string::get-length(vstudio.dir) == 0}">
+			<call target="vs.detectStudio"/>
+		</if>			
+	
+		<!-- Compile and Link -->
+		<if test="${not property::exists('vs.project')}">
+			<exec program="${vstudio.dir}..\IDE\devenv.com" >
+				<arg value="/rebuild" />
+				<arg value="${vs.target}"/>
+				<arg value="${vs.workspace}"/>
+				<environment>
+					<variable name="NANT_LAUNCHED_BUILD" value="TRUE"/>
+				</environment>
+			</exec>
+		</if>
+		<if test="${property::exists('vs.project')}">
+			<exec program="${vstudio.dir}..\IDE\devenv.com" >
+				<arg value="/rebuild" />
+				<arg value="${vs.target}"/>
+				<arg value="/project"/>
+				<arg value="${vs.project}"/>
+				<arg value="${vs.workspace}"/>
+				<environment>
+					<variable name="NANT_LAUNCHED_BUILD" value="TRUE"/>
+				</environment>
+			</exec>
+		</if>
+	</target>
+	
+</project>
